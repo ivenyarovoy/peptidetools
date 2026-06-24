@@ -1,0 +1,137 @@
+import { Syringe, UNITS_PER_ML } from "./syringes";
+
+// Reconstitution math, U-100 scale.
+//
+//   concentration (mg/mL) = vialMg / waterMl
+//   drawMl                 = doseMg / concentration = doseMg * waterMl / vialMg
+//   drawUnits              = drawMl * 100
+//
+// vialMg + doseMg alone don't determine waterMl: the amount of water you add
+// changes the draw size (units) but not the delivered dose. We resolve the free
+// variable by choosing water so the draw lands on a major syringe tick.
+
+export interface DosageInput {
+  /** mg of lyophilized powder in the vial. */
+  vialMg: number;
+  /** Desired dose per injection, in mg. */
+  doseMg: number;
+  /** BAC water added, in mL. */
+  waterMl: number;
+}
+
+export interface DosageResult {
+  concentrationMgPerMl: number;
+  drawMl: number;
+  drawUnits: number;
+  /** Whole doses available from the vial (ignores residual/dead volume). */
+  dosesPerVial: number;
+}
+
+export function computeDosage({ vialMg, doseMg, waterMl }: DosageInput): DosageResult {
+  const concentrationMgPerMl = vialMg / waterMl;
+  const drawMl = doseMg / concentrationMgPerMl;
+  return {
+    concentrationMgPerMl,
+    drawMl,
+    drawUnits: drawMl * UNITS_PER_ML,
+    dosesPerVial: vialMg / doseMg,
+  };
+}
+
+export interface SmartWaterInput {
+  vialMg: number;
+  doseMg: number;
+  syringe: Syringe;
+  /** Max water the vial can hold, in mL (cap). */
+  volumeLimitMl: number;
+}
+
+export interface SmartWaterResult {
+  /** Suggested BAC water in mL, or null if no tick fits within the limits. */
+  waterMl: number | null;
+  /** The draw size we targeted, in units (a multiple of the major tick). */
+  targetUnits: number | null;
+  warning: string | null;
+}
+
+/** Round BAC water increments the suggestion is allowed to pick (mL). */
+const WATER_STEP_ML = 0.5;
+const EPS = 1e-6;
+
+/**
+ * Suggest a ROUND BAC water amount (a multiple of 0.5 mL) that makes one dose
+ * land on — or as close as possible to — a clean syringe tick. We prefer:
+ *   1. the smallest distance from a major tick (a clean reading), then
+ *   2. a draw nearer the middle of the syringe (accurate, easy to read), then
+ *   3. a whole-number water amount over a half.
+ *
+ * Example: 15 mg vial, 4 mg dose -> 1.5 mL water gives 10 mg/mL, so the dose is
+ * 0.4 mL = 40 units exactly.
+ */
+export function suggestWater({
+  vialMg,
+  doseMg,
+  syringe,
+  volumeLimitMl,
+}: SmartWaterInput): SmartWaterResult {
+  if (vialMg <= 0 || doseMg <= 0 || volumeLimitMl <= 0) {
+    return { waterMl: null, targetUnits: null, warning: "Enter positive vial, dose and volume values." };
+  }
+
+  const { majorTickUnits, capacityUnits } = syringe;
+  const middle = capacityUnits / 2;
+
+  let best: { water: number; units: number } | null = null;
+  let bestScore: [number, number, number] | null = null;
+
+  for (let water = WATER_STEP_ML; water <= volumeLimitMl + EPS; water += WATER_STEP_ML) {
+    const units = (UNITS_PER_ML * doseMg * water) / vialMg; // 100 * dose * water / vial
+    if (units < 1 || units > capacityUnits + EPS) continue;
+
+    const nearestTick = Math.round(units / majorTickUnits) * majorTickUnits;
+    const score: [number, number, number] = [
+      Math.abs(units - nearestTick), // closeness to a clean tick
+      Math.abs(nearestTick - middle), // closeness to the middle of the syringe
+      Math.abs(water - Math.round(water)) < EPS ? 0 : 1, // prefer whole mL over half
+    ];
+
+    if (!bestScore || lexLess(score, bestScore)) {
+      bestScore = score;
+      best = { water, units };
+    }
+  }
+
+  if (!best) {
+    return {
+      waterMl: null,
+      targetUnits: null,
+      warning:
+        "No round water amount fits this dose on the selected syringe within the volume limit. " +
+        "Try a different syringe, raise the volume limit, or enter the water amount manually.",
+    };
+  }
+
+  return { waterMl: best.water, targetUnits: best.units, warning: null };
+}
+
+function lexLess(a: [number, number, number], b: [number, number, number]): boolean {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] < b[i] - EPS) return true;
+    if (a[i] > b[i] + EPS) return false;
+  }
+  return false;
+}
+
+/** Warn when a manually entered water amount yields an unusable draw. */
+export function dosageWarning(result: DosageResult, syringe: Syringe): string | null {
+  if (!isFinite(result.drawUnits) || result.drawUnits <= 0) {
+    return "Check your inputs — the draw volume is not a valid number.";
+  }
+  if (result.drawUnits > syringe.capacityUnits) {
+    return `One dose (${result.drawUnits.toFixed(1)} units) exceeds this syringe's ${syringe.capacityUnits}-unit capacity. Use a larger syringe or add more water.`;
+  }
+  if (result.drawUnits < 2) {
+    return "One dose is under 2 units — hard to measure accurately. Consider adding more water.";
+  }
+  return null;
+}
