@@ -156,6 +156,25 @@ export function MixingCalculator() {
             <Stat label="Draw / inj" value={`${result.drawUnits.toFixed(1)} units`} />
           </div>
 
+          {/* Explain what limits the number of injections. */}
+          {(() => {
+            const idx = result.compounds.findIndex((c) => c.isAnchor);
+            const a = result.compounds[idx];
+            if (!a) return null;
+            return (
+              <p className="rounded-lg bg-slate-800/40 px-3 py-2 text-xs text-slate-400">
+                <span className="font-medium text-sky-300">{a.name}</span> runs out first, so it caps
+                the batch at{" "}
+                <span className="font-medium text-slate-200">
+                  {Math.floor(result.injections)} injections
+                </span>{" "}
+                ({a.vialMg} mg ÷ {formatDose(a.doseMg, rows[idx].doseUnit)} per dose). It&apos;s used
+                whole; every other vial is only partially transferred. Want more doses? Increase that
+                vial&apos;s weight or lower its dose.
+              </p>
+            );
+          })()}
+
           {/* Per-injection draw on the matching insulin syringe. */}
           <div>
             <SyringeGraphic syringe={SYRINGES["1.0"]} drawUnits={result.drawUnits} />
@@ -180,9 +199,12 @@ export function MixingCalculator() {
               </thead>
               <tbody className="text-slate-300">
                 {result.compounds.map((c, i) => (
-                  <tr key={c.name} className="border-t border-slate-800">
+                  <tr key={c.name} className={`border-t border-slate-800 ${c.isAnchor ? "bg-sky-500/5" : ""}`}>
                     <td className="py-2 pr-4 font-medium text-slate-200">
-                      {c.name} {c.isAnchor ? <span className="text-xs text-sky-400">(whole)</span> : null}
+                      {c.name}{" "}
+                      {c.isAnchor ? (
+                        <span className="text-xs text-sky-400">(limiting — whole vial)</span>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-4">{(c.fraction * 100).toFixed(0)}%</td>
                     <td className="py-2 pr-4">{c.mgInMix.toFixed(2)} mg</td>
