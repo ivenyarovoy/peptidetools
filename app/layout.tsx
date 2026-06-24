@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DisclaimerFooter } from "@/components/Disclaimer";
+import { SiteNav } from "@/components/SiteNav";
 import "./globals.css";
 
 const SITE_URL = "https://peptideutils.com";
@@ -30,28 +31,16 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-const NAV = [
-  { href: "/dosage", label: "Dosage" },
-  { href: "/mixing", label: "Mixing" },
-  { href: "/partners", label: "Partners" },
-];
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen">
-        <header className="border-b border-slate-800 bg-slate-950/60 backdrop-blur">
-          <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
+        <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+          <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
             <Link href="/" className="text-lg font-bold tracking-tight text-slate-100">
               Peptide<span className="text-sky-400">Utils</span>
             </Link>
-            <nav className="flex gap-5 text-sm text-slate-300">
-              {NAV.map((item) => (
-                <Link key={item.href} href={item.href} className="hover:text-sky-400">
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+            <SiteNav />
           </div>
         </header>
 
