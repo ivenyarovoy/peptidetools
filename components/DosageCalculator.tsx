@@ -97,31 +97,37 @@ export function DosageCalculator() {
         <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/50 p-5">
           <div>
             <span className="mb-1 block text-sm font-medium text-slate-300">Syringe size</span>
-            {/* Photo + label in one button (drop images in public/syringes — see README). */}
-            <div className="grid grid-cols-3 gap-2">
+            {/* Full-width rows so the long syringe photos display well
+                (drop images in public/syringes — see README). */}
+            <div className="space-y-2">
               {SYRINGE_LIST.map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   onClick={() => setSyringeId(s.id)}
-                  className={`flex flex-col items-center gap-1 rounded-lg border p-2 ${
+                  aria-pressed={s.id === syringeId}
+                  className={`block w-full rounded-lg border p-2 text-left transition ${
                     s.id === syringeId
-                      ? "border-sky-500 bg-sky-500/15 text-sky-300"
-                      : "border-slate-700 text-slate-400 hover:border-slate-500"
+                      ? "border-sky-500 bg-sky-500/10"
+                      : "border-slate-700 hover:border-slate-500"
                   }`}
                 >
-                  <span className="relative h-14 w-full overflow-hidden rounded">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={s.photo}
-                      alt={`${s.label} syringe`}
-                      className="absolute inset-0 h-full w-full object-contain"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
+                  <span
+                    className={`mb-1 block text-xs font-medium ${
+                      s.id === syringeId ? "text-sky-300" : "text-slate-400"
+                    }`}
+                  >
+                    {s.label}
                   </span>
-                  <span className="text-xs">{s.label}</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={s.photo}
+                    alt={`${s.label} insulin syringe`}
+                    className="w-full rounded"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
                 </button>
               ))}
             </div>

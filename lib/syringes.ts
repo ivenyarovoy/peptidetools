@@ -23,7 +23,7 @@ export const SYRINGES: Record<SyringeId, Syringe> = {
     capacityUnits: 30,
     majorTickUnits: 5,
     label: "0.3 mL (30 units)",
-    photo: "/syringes/0.3ml.jpg",
+    photo: "/syringes/0.3ml.png",
   },
   "0.5": {
     id: "0.5",
@@ -31,7 +31,7 @@ export const SYRINGES: Record<SyringeId, Syringe> = {
     capacityUnits: 50,
     majorTickUnits: 5,
     label: "0.5 mL (50 units)",
-    photo: "/syringes/0.5ml.jpg",
+    photo: "/syringes/0.5ml.png",
   },
   "1.0": {
     id: "1.0",
@@ -39,7 +39,7 @@ export const SYRINGES: Record<SyringeId, Syringe> = {
     capacityUnits: 100,
     majorTickUnits: 10,
     label: "1 mL (100 units)",
-    photo: "/syringes/1ml.jpg",
+    photo: "/syringes/1ml.png",
   },
 };
 
