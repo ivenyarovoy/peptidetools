@@ -1,6 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { computeDosage, suggestWater, dosageWarning } from "../dosage";
+import { computeDosage, suggestWater, dosageWarning, lowWaterWarning } from "../dosage";
 import { SYRINGES } from "../syringes";
+
+describe("lowWaterWarning", () => {
+  it("warns at 0.25 mL or less", () => {
+    expect(lowWaterWarning(0.25)).toMatch(/hard to dissolve/);
+    expect(lowWaterWarning(0.1)).toMatch(/hard to dissolve/);
+  });
+  it("is quiet above 0.25 mL", () => {
+    expect(lowWaterWarning(0.5)).toBeNull();
+    expect(lowWaterWarning(1)).toBeNull();
+  });
+});
 
 describe("computeDosage", () => {
   it("computes concentration, draw and doses per vial", () => {
@@ -46,7 +57,7 @@ describe("suggestWater", () => {
     const r = suggestWater({
       vialMg: 15,
       doseMg: 4,
-      syringe: SYRINGES["0.5"],
+      syringe: SYRINGES["1.0"],
       volumeLimitMl: 3,
     });
     expect(r.waterMl).toBeCloseTo(1.5);
@@ -55,6 +66,33 @@ describe("suggestWater", () => {
     const check = computeDosage({ vialMg: 15, doseMg: 4, waterMl: r.waterMl! });
     expect(check.drawUnits).toBeCloseTo(40);
     expect(check.concentrationMgPerMl).toBeCloseTo(10);
+  });
+
+  it("drops the tick requirement for very dilute doses and maximizes the draw (5 mg / 0.1 mg on 1 mL -> 3 mL, 6 u)", () => {
+    // 10 units would need 5 mL (over the limit), so don't force a 1-unit draw.
+    const r = suggestWater({
+      vialMg: 5,
+      doseMg: 0.1,
+      syringe: SYRINGES["1.0"],
+      volumeLimitMl: 3,
+    });
+    expect(r.waterMl).toBeCloseTo(3);
+    expect(r.targetUnits).toBeCloseTo(6);
+    expect(r.warning).toBeNull();
+
+    const check = computeDosage({ vialMg: 5, doseMg: 0.1, waterMl: r.waterMl! });
+    expect(check.drawUnits).toBeCloseTo(6);
+  });
+
+  it("never suggests less than 0.25 mL of water (hard to dissolve below that)", () => {
+    for (const s of [SYRINGES["0.3"], SYRINGES["0.5"], SYRINGES["1.0"]]) {
+      for (const vialMg of [1, 5, 10, 30]) {
+        for (const doseMg of [0.5, 1, 3, 8]) {
+          const r = suggestWater({ vialMg, doseMg, syringe: s, volumeLimitMl: 3 });
+          if (r.waterMl !== null) expect(r.waterMl).toBeGreaterThanOrEqual(0.25 - 1e-9);
+        }
+      }
+    }
   });
 
   it("prefers a round 10-unit mark over an equidistant 5-unit one", () => {

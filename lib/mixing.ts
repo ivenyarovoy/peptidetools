@@ -89,16 +89,16 @@ export function computeMix(input: MixInput): MixResult {
   const injections = Math.min(...maxInjections);
   const anchorIndex = maxInjections.indexOf(injections);
 
-  // The user picks the draw size directly; final volume follows from it.
-  const drawUnits = injectionUnits;
+  // The user picks the draw size directly, but the final volume can never
+  // exceed the vial limit, so cap the draw at limit / injections if needed.
+  const maxDrawUnits = (UNITS_PER_ML * volumeLimitMl) / injections;
+  const drawUnits = Math.min(injectionUnits, maxDrawUnits);
   const drawMl = drawUnits / UNITS_PER_ML;
   const finalVolumeMl = injections * drawMl;
 
-  if (finalVolumeMl > volumeLimitMl + EPS) {
+  if (drawUnits < injectionUnits - EPS) {
     warnings.push(
-      `At ${drawUnits} units per injection the mixing vial would need ${finalVolumeMl.toFixed(
-        2,
-      )} mL, over the ${volumeLimitMl} mL limit. Use a smaller injection size.`,
+      `Injection size reduced to ${drawUnits.toFixed(1)} units so the final volume stays within the ${volumeLimitMl} mL vial limit.`,
     );
   }
 

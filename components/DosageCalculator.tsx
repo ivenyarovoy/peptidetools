@@ -6,7 +6,7 @@ import { SyringeGraphic } from "./SyringeGraphic";
 import { DisclaimerBanner } from "./Disclaimer";
 import { UnitToggle } from "./UnitToggle";
 import { SYRINGE_LIST, SYRINGES, SyringeId } from "@/lib/syringes";
-import { computeDosage, DosageResult, dosageWarning, suggestWater } from "@/lib/dosage";
+import { computeDosage, DosageResult, dosageWarning, lowWaterWarning, suggestWater } from "@/lib/dosage";
 import { convert, DoseUnit, formatDose, toMg } from "@/lib/units";
 
 type WaterMode = "auto" | "manual";
@@ -26,6 +26,7 @@ function buildReconstitutionSteps({
   dosage: DosageResult;
 }): string[] {
   return [
+    "Wipe the rubber stopper of both the BAC water and the peptide vial with an alcohol swab and let them air-dry.",
     `Draw ${waterMl.toFixed(2)} mL of bacteriostatic (BAC) water into a syringe.`,
     `Inject the water slowly into the ${vialMg} mg vial, aiming it down the inside wall — not directly onto the powder.`,
     "Swirl gently (do not shake) until the solution is completely clear.",
@@ -71,11 +72,16 @@ export function DosageCalculator() {
     }
 
     if (waterMl === null) {
-      return { waterMl: null, dosage: null, warning: suggestionWarning };
+      return { waterMl: null, dosage: null, warning: suggestionWarning, lowWater: null };
     }
 
     const dosage = computeDosage({ vialMg, doseMg, waterMl });
-    return { waterMl, dosage, warning: dosageWarning(dosage, syringe) };
+    return {
+      waterMl,
+      dosage,
+      warning: dosageWarning(dosage, syringe),
+      lowWater: lowWaterWarning(waterMl),
+    };
   }, [vialMg, dose, doseUnit, syringe, mode, volumeLimit, manualWater]);
 
   // One dose won't fit the syringe: a hard error, not a soft warning.
@@ -241,6 +247,7 @@ export function DosageCalculator() {
                 <Stat label="Doses per vial" value={`${Math.floor(result.dosage.dosesPerVial)}`} />
               </dl>
 
+              {result.lowWater ? <Warning text={result.lowWater} /> : null}
               {!overCapacity && result.warning ? <Warning text={result.warning} /> : null}
             </>
           ) : (

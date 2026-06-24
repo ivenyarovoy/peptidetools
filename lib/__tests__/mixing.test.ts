@@ -82,14 +82,34 @@ describe("computeMix", () => {
     }
   });
 
-  it("warns when the injection size would overflow the vial volume limit", () => {
+  it("caps the final volume at the limit and reduces the injection size to fit", () => {
     const compounds: MixCompound[] = [
       { name: "A", vialMg: 5, doseMg: 0.25 },
       { name: "B", vialMg: 10, doseMg: 0.5 },
     ];
-    // 20 injections x 0.5 mL = 10 mL, over the 3 mL limit.
+    // 20 injections x 0.5 mL would be 10 mL; capped to the 3 mL limit.
     const r = computeMix({ compounds, injectionUnits: 50, volumeLimitMl: 3 });
-    expect(r.warnings.join(" ")).toMatch(/limit/);
+    expect(r.finalVolumeMl).toBeLessThanOrEqual(3 + 1e-9);
+    expect(r.drawUnits).toBeLessThan(50);
+    expect(r.warnings.join(" ")).toMatch(/reduced/);
+    // Doses are still exact after the cap.
+    for (const c of r.compounds) {
+      expect(c.finalConcMgPerMl * r.drawMl).toBeCloseTo(c.doseMg, 6);
+    }
+  });
+
+  it("never lets the final volume exceed the limit, across many injection sizes", () => {
+    const compounds: MixCompound[] = [
+      { name: "A", vialMg: 33, doseMg: 1 },
+      { name: "B", vialMg: 11, doseMg: 1 },
+      { name: "C", vialMg: 18, doseMg: 1 },
+    ];
+    for (const injectionUnits of [5, 20, 50, 100, 500]) {
+      for (const volumeLimitMl of [1, 2, 3]) {
+        const r = computeMix({ compounds, injectionUnits, volumeLimitMl });
+        expect(r.finalVolumeMl).toBeLessThanOrEqual(volumeLimitMl + 1e-9);
+      }
+    }
   });
 
   it("blocks with fewer than two compounds", () => {

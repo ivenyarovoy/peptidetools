@@ -55,18 +55,24 @@ export interface SmartWaterResult {
 }
 
 /** Round BAC water increments the suggestion is allowed to pick (mL). */
-const WATER_STEP_ML = 0.5;
+const WATER_STEP_ML = 0.25;
+/** Never suggest less than this — too little water is hard to dissolve in the vial. */
+const MIN_WATER_ML = 0.25;
 const EPS = 1e-6;
 
+/** A draw smaller than this is hard to measure, so we avoid suggesting it. */
+const MIN_DRAW_UNITS = 2;
+
 /**
- * Suggest a ROUND BAC water amount (a multiple of 0.5 mL) that makes one dose
- * land on — or as close as possible to — a clean syringe tick. We prefer:
- *   1. the smallest distance from a major tick (a clean reading), then
- *   2. a draw nearer the middle of the syringe (accurate, easy to read), then
- *   3. a whole-number water amount over a half.
+ * Suggest a ROUND BAC water amount (a multiple of 0.25 mL) for one dose.
  *
- * Example: 15 mg vial, 4 mg dose -> 1.5 mL water gives 10 mg/mL, so the dose is
- * 0.4 mL = 40 units exactly.
+ * Preferred: a draw that lands exactly on a major syringe tick, chosen nearest
+ * the middle of the syringe (and on a whole mL of water when tied).
+ *
+ * If the dose is so dilute that no tick is reachable within the volume limit
+ * (e.g. 5 mg vial, 0.1 mg dose on a 1 mL syringe — 10 units would need 5 mL),
+ * we drop the tick requirement and just use the most water (biggest, most
+ * measurable draw) instead of forcing a tiny 1-unit draw onto a tick.
  */
 export function suggestWater({
   vialMg,
@@ -81,40 +87,48 @@ export function suggestWater({
   const { majorTickUnits, capacityUnits } = syringe;
   const middle = capacityUnits / 2;
 
-  let best: { water: number; units: number } | null = null;
-  let bestScore: [number, number, number] | null = null;
+  let tickBest: { water: number; units: number } | null = null;
+  let tickScore: [number, number] | null = null;
+  let biggestDraw: { water: number; units: number } | null = null;
 
-  for (let water = WATER_STEP_ML; water <= volumeLimitMl + EPS; water += WATER_STEP_ML) {
+  for (let water = MIN_WATER_ML; water <= volumeLimitMl + EPS; water += WATER_STEP_ML) {
     const units = (UNITS_PER_ML * doseMg * water) / vialMg; // 100 * dose * water / vial
     if (units < 1 || units > capacityUnits + EPS) continue;
 
-    const nearestTick = Math.round(units / majorTickUnits) * majorTickUnits;
-    const score: [number, number, number] = [
-      Math.abs(units - nearestTick), // closeness to a clean tick
-      Math.abs(nearestTick - middle), // closeness to the middle of the syringe
-      Math.abs(water - Math.round(water)) < EPS ? 0 : 1, // prefer whole mL over half
-    ];
+    // Fallback candidate: the largest measurable draw within the limits.
+    if (units >= MIN_DRAW_UNITS && (biggestDraw === null || units > biggestDraw.units + EPS)) {
+      biggestDraw = { water, units };
+    }
 
-    if (!bestScore || lexLess(score, bestScore)) {
-      bestScore = score;
-      best = { water, units };
+    // Preferred: lands exactly on a major tick.
+    const nearestTick = Math.round(units / majorTickUnits) * majorTickUnits;
+    if (Math.abs(units - nearestTick) <= EPS && nearestTick >= majorTickUnits) {
+      const score: [number, number] = [
+        Math.abs(nearestTick - middle), // nearest the middle of the syringe
+        Math.abs(water - Math.round(water)) < EPS ? 0 : 1, // prefer whole mL over half
+      ];
+      if (!tickScore || lexLess(score, tickScore)) {
+        tickScore = score;
+        tickBest = { water, units };
+      }
     }
   }
 
+  const best = tickBest ?? biggestDraw;
   if (!best) {
     return {
       waterMl: null,
       targetUnits: null,
       warning:
-        "No round water amount fits this dose on the selected syringe within the volume limit. " +
-        "Try a different syringe, raise the volume limit, or enter the water amount manually.",
+        "This dose is too dilute to draw measurably on the selected syringe within the volume " +
+        "limit. Try a different syringe, raise the volume limit, or enter the water amount manually.",
     };
   }
 
   return { waterMl: best.water, targetUnits: best.units, warning: null };
 }
 
-function lexLess(a: [number, number, number], b: [number, number, number]): boolean {
+function lexLess(a: number[], b: number[]): boolean {
   for (let i = 0; i < a.length; i++) {
     if (a[i] < b[i] - EPS) return true;
     if (a[i] > b[i] + EPS) return false;
@@ -132,6 +146,14 @@ export function dosageWarning(result: DosageResult, syringe: Syringe): string | 
   }
   if (result.drawUnits < 2) {
     return "One dose is under 2 units — hard to measure accurately. Consider adding more water.";
+  }
+  return null;
+}
+
+/** Warn when so little water is added that the powder is hard to dissolve/measure. */
+export function lowWaterWarning(waterMl: number): string | null {
+  if (waterMl <= MIN_WATER_ML + EPS) {
+    return `Only ${waterMl.toFixed(2)} mL of BAC water — that little is hard to dissolve and measure accurately. Add more if you can.`;
   }
   return null;
 }
