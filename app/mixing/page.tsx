@@ -31,9 +31,11 @@ export default function MixingPage() {
           only the fraction needed. That&apos;s why you might reconstitute one vial and move just
           half of it into another.
         </p>
-        <p className="text-slate-500">
-          Tip: keep transfers measurable on your syringe. If a transfer is tiny, increase that
-          vial&apos;s reconstitution volume.
+        <p>
+          You choose the <span className="text-slate-300">injection size</span> (how much you draw
+          per shot). The final vial volume is simply that draw times the number of injections — pick
+          a bigger injection size for a larger, easier-to-measure final volume, or a smaller one to
+          use less BAC water. Either way each injection delivers the same target doses.
         </p>
       </section>
     </div>

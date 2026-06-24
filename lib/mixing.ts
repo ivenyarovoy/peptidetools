@@ -1,4 +1,4 @@
-import { Syringe, UNITS_PER_ML } from "./syringes";
+import { UNITS_PER_ML } from "./syringes";
 
 // Mixing 2+ lyophilized compounds into one vial you draw from once per injection.
 //
@@ -20,7 +20,8 @@ export interface MixCompound {
 
 export interface MixInput {
   compounds: MixCompound[];
-  syringe: Syringe;
+  /** Desired volume drawn per injection, in U-100 units (e.g. 20 = 0.2 mL). */
+  injectionUnits: number;
   /** Max volume the final mixing vial can hold, in mL. */
   volumeLimitMl: number;
   /** Water used to reconstitute each non-anchor vial before transferring, mL. */
@@ -58,10 +59,16 @@ export interface MixResult {
 }
 
 const MIN_MEASURABLE_UNITS = 2; // < 2 units (0.02 mL) is hard to measure accurately.
+const EPS = 1e-9;
+
+// Non-anchor vials are reconstituted in 1 mL and the needed fraction is drawn
+// with a standard 1 mL syringe. Since every fraction is <= 1, the transfer is
+// always <= 1 mL (drawable), and the mg transferred is independent of this
+// volume, so the delivered dose is unaffected.
+const RECONSTITUTE_ML = 1.0;
 
 export function computeMix(input: MixInput): MixResult {
-  const { compounds, syringe, volumeLimitMl } = input;
-  const reconstituteMl = input.reconstituteMl ?? 1.0;
+  const { compounds, injectionUnits, volumeLimitMl } = input;
   const warnings: string[] = [];
 
   if (compounds.length < 2) {
@@ -73,38 +80,47 @@ export function computeMix(input: MixInput): MixResult {
   if (volumeLimitMl <= 0) {
     return blocked("Volume limit must be positive.");
   }
+  if (injectionUnits <= 0) {
+    return blocked("Injection size must be more than 0 units.");
+  }
 
   // Anchor = compound that supports the fewest injections; it's used whole.
   const maxInjections = compounds.map((c) => c.vialMg / c.doseMg);
   const injections = Math.min(...maxInjections);
   const anchorIndex = maxInjections.indexOf(injections);
 
-  // Draw size: largest major-tick draw that fits both the syringe and the
-  // volume limit (final volume V = injections * draw must be <= limit).
-  const maxUnitsByVolume = (UNITS_PER_ML * volumeLimitMl) / injections;
-  const maxUnits = Math.min(syringe.capacityUnits, maxUnitsByVolume);
-  const ticks = Math.floor(maxUnits / syringe.majorTickUnits);
-
-  let drawUnits: number;
-  if (ticks >= 1) {
-    drawUnits = ticks * syringe.majorTickUnits;
-  } else {
-    // Can't reach even one major tick; fall back to the largest draw that fits.
-    drawUnits = maxUnits;
-    warnings.push(
-      "The per-injection draw is smaller than one major syringe tick. Consider a smaller syringe or a higher volume limit.",
-    );
-  }
-
+  // The user picks the draw size directly; final volume follows from it.
+  const drawUnits = injectionUnits;
   const drawMl = drawUnits / UNITS_PER_ML;
   const finalVolumeMl = injections * drawMl;
 
-  // Transfer plan per compound.
+  if (finalVolumeMl > volumeLimitMl + EPS) {
+    warnings.push(
+      `At ${drawUnits} units per injection the mixing vial would need ${finalVolumeMl.toFixed(
+        2,
+      )} mL, over the ${volumeLimitMl} mL limit. Use a smaller injection size.`,
+    );
+  }
+
+  // Each non-anchor vial is reconstituted in the same volume, then the needed
+  // fraction is drawn. Default to 1 mL, but shrink it if the transfers would
+  // otherwise sum to more than the final volume (which would leave no room and
+  // force negative anchor water). The mg transferred is unchanged either way, so
+  // the delivered dose is unaffected. An explicit input.reconstituteMl wins.
+  const fractions = compounds.map((c, i) =>
+    i === anchorIndex ? 0 : (c.doseMg * injections) / c.vialMg,
+  );
+  const sumFractions = fractions.reduce((sum, f) => sum + f, 0);
+  const reconstituteMl =
+    input.reconstituteMl ??
+    (sumFractions > 0 ? Math.min(RECONSTITUTE_ML, finalVolumeMl / sumFractions) : RECONSTITUTE_ML);
+
   const plans: MixCompoundPlan[] = compounds.map((c, i) => {
     const isAnchor = i === anchorIndex;
     const mgInMix = c.doseMg * injections;
-    const fraction = mgInMix / c.vialMg;
-    const transferMl = isAnchor ? null : fraction * reconstituteMl;
+    const fraction = mgInMix / c.vialMg; // 1 for the anchor (whole vial)
+    const reconMl = isAnchor ? null : reconstituteMl;
+    const transferMl = reconMl === null ? null : fraction * reconMl;
     return {
       name: c.name || `Compound ${i + 1}`,
       vialMg: c.vialMg,
@@ -112,7 +128,7 @@ export function computeMix(input: MixInput): MixResult {
       isAnchor,
       mgInMix,
       fraction,
-      reconstituteMl: isAnchor ? null : reconstituteMl,
+      reconstituteMl: reconMl,
       transferMl,
       transferUnits: transferMl === null ? null : transferMl * UNITS_PER_ML,
       finalConcMgPerMl: mgInMix / finalVolumeMl,
@@ -134,11 +150,6 @@ export function computeMix(input: MixInput): MixResult {
         `Transfer for ${p.name} (${p.transferUnits.toFixed(1)} units) is tiny and hard to measure. Increase its reconstitution volume.`,
       );
     }
-  }
-  if (finalVolumeMl > volumeLimitMl + 1e-9) {
-    warnings.push(
-      `Final volume (${finalVolumeMl.toFixed(2)} mL) exceeds the ${volumeLimitMl} mL limit.`,
-    );
   }
 
   const steps = buildSteps(plans, anchorWaterMl, finalVolumeMl, drawMl, drawUnits, injections);

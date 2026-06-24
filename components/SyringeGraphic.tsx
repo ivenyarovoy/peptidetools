@@ -11,16 +11,22 @@ interface SyringeGraphicProps {
 export function SyringeGraphic({ syringe, drawUnits }: SyringeGraphicProps) {
   const W = 380;
   const H = 90;
-  const barrelLeft = 56;
+  const barrelLeft = 40;
   const barrelRight = 320;
-  const barrelWidth = barrelRight - barrelLeft;
   const barrelTop = 30;
   const barrelHeight = 30;
 
+  // Inset only the plunger (left) end so the max number (e.g. 50 / 100) sits
+  // fully inside the barrel. The 0 end stays at the needle tip as before.
+  const tickPad = 16;
+  const scaleRight = barrelRight; // u = 0, at the needle tip
+  const scaleLeft = barrelLeft + tickPad; // u = cap, at the plunger
+  const scaleSpan = scaleRight - scaleLeft;
+
   const cap = syringe.capacityUnits;
   const fraction = Math.max(0, Math.min(1, drawUnits / cap));
-  const fillWidth = fraction * barrelWidth;
-  const fillLeft = barrelRight - fillWidth; // fill from the needle end
+  const fillWidth = fraction * scaleSpan;
+  const fillLeft = scaleRight - fillWidth; // fill from the 0 mark (needle end)
 
   // Numbering runs backwards: 0 at the needle tip (right), max at the plunger
   // (left), matching how an insulin syringe is actually read.
@@ -28,7 +34,7 @@ export function SyringeGraphic({ syringe, drawUnits }: SyringeGraphicProps) {
   const ticks: { x: number; units: number; major: boolean }[] = [];
   for (let u = 0; u <= cap; u += minorStep) {
     ticks.push({
-      x: barrelRight - (u / cap) * barrelWidth,
+      x: scaleRight - (u / cap) * scaleSpan,
       units: u,
       major: u % syringe.majorTickUnits === 0,
     });
@@ -53,7 +59,7 @@ export function SyringeGraphic({ syringe, drawUnits }: SyringeGraphicProps) {
       ) : null}
 
       {/* barrel outline */}
-      <rect x={barrelLeft} y={barrelTop} width={barrelWidth} height={barrelHeight} fill="none" stroke="#94a3b8" strokeWidth={2} rx={3} />
+      <rect x={barrelLeft} y={barrelTop} width={barrelRight - barrelLeft} height={barrelHeight} fill="none" stroke="#94a3b8" strokeWidth={2} rx={3} />
 
       {/* ticks + labels */}
       {ticks.map((t) => (

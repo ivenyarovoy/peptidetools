@@ -25,7 +25,9 @@ export function NumberField({
 }: NumberFieldProps) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-300">{label}</span>
+      {label ? (
+        <span className="mb-1 block text-sm font-medium text-slate-300">{label}</span>
+      ) : null}
       <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-700 bg-slate-900 focus-within:border-sky-500">
         <input
           type="number"

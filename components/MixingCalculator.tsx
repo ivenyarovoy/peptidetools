@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { NumberField } from "./NumberField";
 import { UnitToggle } from "./UnitToggle";
 import { DisclaimerBanner } from "./Disclaimer";
-import { SYRINGE_LIST, SYRINGES, SyringeId } from "@/lib/syringes";
 import { computeMix } from "@/lib/mixing";
 import { convert, DoseUnit, formatDose, toMg } from "@/lib/units";
 
@@ -21,12 +20,12 @@ const START: Row[] = [
   { name: "Compound B", vialMg: 10, dose: 0.5, doseUnit: "mg" },
 ];
 
+const INJECTION_PRESETS = [10, 20, 25, 50];
+
 export function MixingCalculator() {
   const [rows, setRows] = useState<Row[]>(START);
-  const [syringeId, setSyringeId] = useState<SyringeId>("0.5");
+  const [injectionUnits, setInjectionUnits] = useState<Num>(20);
   const [volumeLimit, setVolumeLimit] = useState<Num>(3);
-
-  const syringe = SYRINGES[syringeId];
 
   function update(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -50,17 +49,18 @@ export function MixingCalculator() {
 
   const result = useMemo(() => {
     const ready = rows.every((r) => r.vialMg !== "" && r.dose !== "" && r.vialMg > 0 && r.dose > 0);
-    if (!ready || volumeLimit === "" || volumeLimit <= 0) return null;
+    if (!ready || volumeLimit === "" || volumeLimit <= 0 || injectionUnits === "" || injectionUnits <= 0)
+      return null;
     return computeMix({
       compounds: rows.map((r) => ({
         name: r.name,
         vialMg: r.vialMg as number,
         doseMg: toMg(r.dose as number, r.doseUnit),
       })),
-      syringe,
+      injectionUnits,
       volumeLimitMl: volumeLimit,
     });
-  }, [rows, syringe, volumeLimit]);
+  }, [rows, injectionUnits, volumeLimit]);
 
   return (
     <div className="space-y-6">
@@ -117,23 +117,35 @@ export function MixingCalculator() {
 
         <div className="grid gap-3 border-t border-slate-800 pt-4 sm:grid-cols-2">
           <div>
-            <span className="mb-1 block text-sm font-medium text-slate-300">Syringe size</span>
-            <div className="flex gap-2">
-              {SYRINGE_LIST.map((s) => (
+            <span className="mb-1 block text-sm font-medium text-slate-300">Injection size</span>
+            <div className="mb-2 grid grid-cols-4 gap-1 overflow-hidden rounded-lg border border-slate-700">
+              {INJECTION_PRESETS.map((u) => (
                 <button
-                  key={s.id}
+                  key={u}
                   type="button"
-                  onClick={() => setSyringeId(s.id)}
-                  className={`flex-1 rounded-lg border px-2 py-2 text-xs ${
-                    s.id === syringeId
-                      ? "border-sky-500 bg-sky-500/15 text-sky-300"
-                      : "border-slate-700 text-slate-400 hover:border-slate-500"
+                  onClick={() => setInjectionUnits(u)}
+                  className={`py-1.5 text-xs ${
+                    injectionUnits === u
+                      ? "bg-sky-500/15 text-sky-300"
+                      : "text-slate-400 hover:bg-slate-800"
                   }`}
                 >
-                  {s.label}
+                  {u} units
                 </button>
               ))}
             </div>
+            <NumberField
+              label=""
+              value={injectionUnits}
+              onChange={setInjectionUnits}
+              unit="units"
+              step={1}
+              hint={
+                injectionUnits === "" || injectionUnits <= 0
+                  ? "How much you draw per injection."
+                  : `How much you draw per injection (${((injectionUnits as number) / 100).toFixed(2)} mL).`
+              }
+            />
           </div>
           <NumberField
             label="Final vial volume limit"
@@ -152,7 +164,7 @@ export function MixingCalculator() {
           <div className="grid grid-cols-3 gap-3 text-sm">
             <Stat label="Injections" value={`${Math.floor(result.injections)}`} />
             <Stat label="Final volume" value={`${result.finalVolumeMl.toFixed(2)} mL`} />
-            <Stat label="Draw / inj" value={`${result.drawUnits.toFixed(1)} u`} />
+            <Stat label="Draw / inj" value={`${result.drawUnits.toFixed(1)} units`} />
           </div>
 
           <ol className="space-y-2">
