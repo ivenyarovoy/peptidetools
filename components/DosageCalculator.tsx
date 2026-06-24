@@ -6,7 +6,7 @@ import { SyringeGraphic } from "./SyringeGraphic";
 import { DisclaimerBanner } from "./Disclaimer";
 import { UnitToggle } from "./UnitToggle";
 import { SYRINGE_LIST, SYRINGES, SyringeId } from "@/lib/syringes";
-import { computeDosage, DosageResult, dosageWarning, suggestWater } from "@/lib/dosage";
+import { computeDosage, DosageResult, dosageWarning, lowWaterWarning, suggestWater } from "@/lib/dosage";
 import { convert, DoseUnit, formatDose, toMg } from "@/lib/units";
 
 type WaterMode = "auto" | "manual";
@@ -26,6 +26,7 @@ function buildReconstitutionSteps({
   dosage: DosageResult;
 }): string[] {
   return [
+    "Wipe the rubber stopper of both the BAC water and the peptide vial with an alcohol swab and let them air-dry.",
     `Draw ${waterMl.toFixed(2)} mL of bacteriostatic (BAC) water into a syringe.`,
     `Inject the water slowly into the ${vialMg} mg vial, aiming it down the inside wall — not directly onto the powder.`,
     "Swirl gently (do not shake) until the solution is completely clear.",
@@ -71,12 +72,21 @@ export function DosageCalculator() {
     }
 
     if (waterMl === null) {
-      return { waterMl: null, dosage: null, warning: suggestionWarning };
+      return { waterMl: null, dosage: null, warning: suggestionWarning, lowWater: null };
     }
 
     const dosage = computeDosage({ vialMg, doseMg, waterMl });
-    return { waterMl, dosage, warning: dosageWarning(dosage, syringe) };
+    return {
+      waterMl,
+      dosage,
+      warning: dosageWarning(dosage, syringe),
+      lowWater: lowWaterWarning(waterMl),
+    };
   }, [vialMg, dose, doseUnit, syringe, mode, volumeLimit, manualWater]);
+
+  // One dose won't fit the syringe: a hard error, not a soft warning.
+  const overCapacity =
+    result?.dosage != null && result.dosage.drawUnits > syringe.capacityUnits;
 
   return (
     <div className="space-y-6">
@@ -136,7 +146,7 @@ export function DosageCalculator() {
           </div>
 
           <div>
-            <span className="mb-1 block text-sm font-medium text-slate-300">BAC water</span>
+            <span className="mb-1 block text-sm font-medium text-slate-300">BAC water to add</span>
             <div className="mb-2 flex overflow-hidden rounded-lg border border-slate-700 text-sm">
               <button
                 type="button"
@@ -172,7 +182,7 @@ export function DosageCalculator() {
                   ))}
                 </div>
                 <NumberField
-                  label="Water to add"
+                  label=""
                   value={manualWater}
                   onChange={setManualWater}
                   unit="mL"
@@ -217,21 +227,28 @@ export function DosageCalculator() {
                 <p className="text-4xl font-bold text-sky-300">{result.waterMl.toFixed(2)} mL</p>
               </div>
 
-              <SyringeGraphic syringe={syringe} drawUnits={result.dosage.drawUnits} />
-              <p className="text-center text-sm text-slate-400">
-                Injection dose:{" "}
-                <span className="font-semibold text-slate-200">
-                  {result.dosage.drawUnits.toFixed(1)} units
-                </span>{" "}
-                ({result.dosage.drawMl.toFixed(3)} mL)
-              </p>
+              {overCapacity ? (
+                <ErrorBox text={result.warning ?? "This dose won't fit the selected syringe."} />
+              ) : (
+                <>
+                  <SyringeGraphic syringe={syringe} drawUnits={result.dosage.drawUnits} />
+                  <p className="text-center text-sm text-slate-400">
+                    Injection dose:{" "}
+                    <span className="font-semibold text-slate-200">
+                      {result.dosage.drawUnits.toFixed(1)} units
+                    </span>{" "}
+                    ({result.dosage.drawMl.toFixed(3)} mL)
+                  </p>
+                </>
+              )}
 
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <Stat label="Concentration" value={`${result.dosage.concentrationMgPerMl.toFixed(2)} mg/mL`} />
                 <Stat label="Doses per vial" value={`${Math.floor(result.dosage.dosesPerVial)}`} />
               </dl>
 
-              {result.warning ? <Warning text={result.warning} /> : null}
+              {result.lowWater ? <Warning text={result.lowWater} /> : null}
+              {!overCapacity && result.warning ? <Warning text={result.warning} /> : null}
             </>
           ) : (
             <Warning text={result?.warning ?? "Enter your vial weight and dose to begin."} />
@@ -240,7 +257,7 @@ export function DosageCalculator() {
       </div>
 
       {/* Step-by-step reconstitution guide with the computed amounts. */}
-      {result?.waterMl != null && result.dosage ? (
+      {result?.waterMl != null && result.dosage && !overCapacity ? (
         <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/50 p-5">
           <h3 className="text-lg font-semibold text-slate-100">Reconstitution guide</h3>
           <ol className="space-y-3">
@@ -282,5 +299,19 @@ function Warning({ text }: { text: string }) {
     <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
       {text}
     </p>
+  );
+}
+
+function ErrorBox({ text }: { text: string }) {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-lg border-2 border-red-500 bg-red-500/15 px-4 py-3 text-sm font-semibold text-red-200"
+    >
+      <span aria-hidden className="text-lg leading-none">
+        ⚠
+      </span>
+      <span>{text}</span>
+    </div>
   );
 }

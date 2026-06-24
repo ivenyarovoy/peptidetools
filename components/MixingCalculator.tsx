@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { NumberField } from "./NumberField";
 import { UnitToggle } from "./UnitToggle";
 import { DisclaimerBanner } from "./Disclaimer";
-import { SYRINGE_LIST, SYRINGES, SyringeId } from "@/lib/syringes";
+import { SyringeGraphic } from "./SyringeGraphic";
+import { SYRINGES } from "@/lib/syringes";
 import { computeMix } from "@/lib/mixing";
 import { convert, DoseUnit, formatDose, toMg } from "@/lib/units";
 
@@ -23,10 +24,8 @@ const START: Row[] = [
 
 export function MixingCalculator() {
   const [rows, setRows] = useState<Row[]>(START);
-  const [syringeId, setSyringeId] = useState<SyringeId>("0.5");
+  const [injectionUnits, setInjectionUnits] = useState<Num>(10);
   const [volumeLimit, setVolumeLimit] = useState<Num>(3);
-
-  const syringe = SYRINGES[syringeId];
 
   function update(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -50,17 +49,24 @@ export function MixingCalculator() {
 
   const result = useMemo(() => {
     const ready = rows.every((r) => r.vialMg !== "" && r.dose !== "" && r.vialMg > 0 && r.dose > 0);
-    if (!ready || volumeLimit === "" || volumeLimit <= 0) return null;
+    if (!ready || volumeLimit === "" || volumeLimit <= 0 || injectionUnits === "" || injectionUnits <= 0)
+      return null;
     return computeMix({
       compounds: rows.map((r) => ({
         name: r.name,
         vialMg: r.vialMg as number,
         doseMg: toMg(r.dose as number, r.doseUnit),
       })),
-      syringe,
+      injectionUnits,
       volumeLimitMl: volumeLimit,
     });
-  }, [rows, syringe, volumeLimit]);
+  }, [rows, injectionUnits, volumeLimit]);
+
+  // The requested injection size was reduced to keep the final volume in budget.
+  const cappedTo =
+    result && injectionUnits !== "" && injectionUnits > result.drawUnits + 1e-9
+      ? result.drawUnits
+      : null;
 
   return (
     <div className="space-y-6">
@@ -116,25 +122,20 @@ export function MixingCalculator() {
         </button>
 
         <div className="grid gap-3 border-t border-slate-800 pt-4 sm:grid-cols-2">
-          <div>
-            <span className="mb-1 block text-sm font-medium text-slate-300">Syringe size</span>
-            <div className="flex gap-2">
-              {SYRINGE_LIST.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSyringeId(s.id)}
-                  className={`flex-1 rounded-lg border px-2 py-2 text-xs ${
-                    s.id === syringeId
-                      ? "border-sky-500 bg-sky-500/15 text-sky-300"
-                      : "border-slate-700 text-slate-400 hover:border-slate-500"
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <NumberField
+            label="Injection size"
+            value={injectionUnits}
+            onChange={setInjectionUnits}
+            unit="units"
+            step={1}
+            hint={
+              cappedTo != null
+                ? `Capped at ${cappedTo.toFixed(0)} units — ${Math.floor(result!.injections)} injections must fit in ${volumeLimit} mL. Raise the limit for a bigger injection.`
+                : injectionUnits === "" || injectionUnits <= 0
+                  ? "How much you draw per injection (on a 1 mL syringe)."
+                  : `How much you draw per injection (${((injectionUnits as number) / 100).toFixed(2)} mL on a 1 mL syringe).`
+            }
+          />
           <NumberField
             label="Final vial volume limit"
             value={volumeLimit}
@@ -152,20 +153,20 @@ export function MixingCalculator() {
           <div className="grid grid-cols-3 gap-3 text-sm">
             <Stat label="Injections" value={`${Math.floor(result.injections)}`} />
             <Stat label="Final volume" value={`${result.finalVolumeMl.toFixed(2)} mL`} />
-            <Stat label="Draw / inj" value={`${result.drawUnits.toFixed(1)} u`} />
+            <Stat label="Draw / inj" value={`${result.drawUnits.toFixed(1)} units`} />
           </div>
 
-          <ol className="space-y-2">
-            {result.steps.map((step, i) => (
-              <li key={i} className="flex gap-3 text-sm text-slate-300">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-xs font-semibold text-sky-300">
-                  {i + 1}
-                </span>
-                <span>{step}</span>
-              </li>
-            ))}
-          </ol>
+          {/* Per-injection draw on the matching insulin syringe. */}
+          <div>
+            <SyringeGraphic syringe={SYRINGES["1.0"]} drawUnits={result.drawUnits} />
+            <p className="text-center text-sm text-slate-400">
+              Draw{" "}
+              <span className="font-semibold text-slate-200">{result.drawUnits.toFixed(1)} units</span>{" "}
+              ({result.drawMl.toFixed(3)} mL) per injection
+            </p>
+          </div>
 
+          {/* Concentrations table (above the instructions). */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
@@ -192,6 +193,18 @@ export function MixingCalculator() {
               </tbody>
             </table>
           </div>
+
+          {/* Step-by-step instructions. */}
+          <ol className="space-y-2">
+            {result.steps.map((step, i) => (
+              <li key={i} className="flex gap-3 text-sm text-slate-300">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-xs font-semibold text-sky-300">
+                  {i + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
 
           {result.warnings.map((w, i) => (
             <p key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
